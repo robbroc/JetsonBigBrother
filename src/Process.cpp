@@ -10,10 +10,12 @@ Process::Process(string path_dir_detection_model,string path_dir_reid_model):
 detect_model(path_dir_detection_model+"optimized.pb",path_dir_detection_model+"cvgraph.pbtxt")
 {
     detect_model.setInputParams(1.0,Size(320,320),0,true);
+    detect_model.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+    detect_model.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
     reid_model=readNetFromCaffe(path_dir_reid_model+"model-caffe.prototxt", path_dir_reid_model+"model-caffe.caffemodel");
 
-    reid_model.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
-
+    reid_model.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
+    reid_model.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
     cv::namedWindow("Frame", cv::WINDOW_NORMAL);
 }
 
@@ -124,17 +126,17 @@ int Process::get_person(std::vector<float> face_feat, float thr)
             min_index = i;
             min_coss = coss;
         }
-        cout<<"similarity cos "<<coss<<endl;
+        //cout<<"similarity cos "<<coss<<endl;
 
     }
-    cout<<endl<<"--------------------------------------------------------"<<endl;
+    //cout<<endl<<"--------------------------------------------------------"<<endl;
 
     if(min_index == -1) // creo la persona
     {
-        cout<<"aggiungo una persona al db con id ";
+        //cout<<"aggiungo una persona al db con id ";
         db.emplace_back(face_feat);
-        cout<<db.back().Getid()<<endl; // DA TOGLIERE
-        std::cout << &db.back() << endl;
+        //cout<<db.back().Getid()<<endl; // DA TOGLIERE
+        //std::cout << &db.back() << endl;
         return db.size()-1;
     }
 
@@ -247,7 +249,7 @@ void Process::run()
                 // controlliamo se il tracking è andato a buon fine eventualmente distruggiamo il bbox
                 if(!tracked)
                 {
-                    cout<<"cancello bbox "<<i<<endl;
+                    //cout<<"cancello bbox "<<i<<endl;
                     bboxes.erase(bboxes.begin()+i);
                     i--;
                     continue;
