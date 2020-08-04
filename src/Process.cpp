@@ -144,60 +144,13 @@ int Process::get_person(const std::vector<float>& face_feat, float thr)
     return min_index;
 }
 
-void Process::run()
-{
-    //
-    /* per salvare il video di debug DA TOGLIERE
-    VideoWriter writer;
-    int codec = VideoWriter::fourcc('M', 'J', 'P', 'G');  // select desired codec (must be available at runtime)
-    double fps = 25.0;                          // framerate of the created video stream
-    string filename = "./ouput.avi";             // name of the output video file
-    camera>>frame;
-    writer.open(filename, codec, fps, frame.size(), true);
-    */
 
-    while(true)
-    {
-        auto ts_all = Clock::now();
-
-
-        //cout<<frame.size();
-        if(!frame_counter)
-        {// il primo di 3 frame deve far partire l'esecuzione della rete di detection
-
-
-        }else if(frame_counter == 2) frame_counter = 0; // il terzo frame riazzera il conteggio
-
-        else // qui effettuiamo il traking dei bboxes
-        { // eventualmente parallelizzare qui
-        // utilizziamo il tempo corrente per creare un meccanismo di aging
-            bool tracked = false;
-
-            frame_counter++;
-
-        }
-
-        // a scopo dimostrativo viene lanciata show per poi far vedere il risultato finale
-        // nella demo finale dovrà girare su un altro thread con il giusto timing in modo che
-        // non vengano allungati i tempi di esecuzione del core
-
-        show_result();
-
-        //cout<<"attualmente ci sono "<<bboxes.size()<<" bbox"<<endl;
-        // writer<<frame; per salvare il video per il debug DA TOGLIERE
-        // in accoppiata con show_result fa bloccare l'esecuzione
-        if (waitKey(1) >= 0) // DA TOGLIERE
-            break;
-        auto ts_all_f = Clock::now();
-        std::cout << "all execution: "
-                  << std::chrono::duration_cast<std::chrono::nanoseconds>(ts_all_f - ts_all).count()
-                  << " nanoseconds" << std::endl;
-        sched_yield(); //una volta terminato il lavoro per il periodo rilascia le risorse
-    }
-}
  // PIAZZARE L'ESECUZIONE DI QUESTA FUNZIONE SU UN ALTRO THREAD
 void Process::show_result()
 {
+    unique_lock<mutex> lock1(frame_mut,defer_lock);
+    unique_lock<mutex> lock2(bb_mut,defer_lock);
+    std::lock(lock1, lock2);
     auto frame_to_show = frame.clone();
     for(auto && bb:bboxes)
     {
@@ -206,13 +159,16 @@ void Process::show_result()
     }
     //  mostra l'immagine
     cv::imshow("Frame",frame_to_show);
+    if (waitKey(1) >= 0) // DA TOGLIERE
+        exit(0);
     //cv::resizeWindow("Frame", 640, 480);
     //cv::waitKey(1); DA RIPRISTINARE
 
 }
 
 bool Process::capture_frame() {
-
+    // per gestire l'accesso concorrente
+    unique_lock<mutex> lock(frame_mut);
     ts = chrono::duration_cast<chrono::milliseconds >(chrono::system_clock::now().time_since_epoch());
     camera>> frame;
     if((++frame_counter) ==4) frame_counter=1;
@@ -229,6 +185,9 @@ void Process::tracking_bboxes() {
     while(frame_counter==1){// deve controllare e cedere la cpu eventualmente ad ogni periodo
         sched_yield();
     }
+    unique_lock<mutex> lock1(frame_mut,defer_lock);
+    unique_lock<mutex> lock2(bb_mut,defer_lock);
+    std::lock(lock1, lock2);
     for(size_t i = 0; i<bboxes.size();i++)
     {
         if((ts - bboxes[i].timestamp) > 1000ms) // controllo quando è stato associato l'ultima volta un rect rilevato dalla rete di detection a questo bbox
@@ -259,6 +218,9 @@ void Process::face_detection() {
     while(frame_counter!=1){// deve controllare e cedere la cpu eventualmente ad ogni periodo
         sched_yield();
     }
+    unique_lock<mutex> lock1(frame_mut,defer_lock);
+    unique_lock<mutex> lock2(bb_mut,defer_lock);
+    std::lock(lock1, lock2);
     detect_model.detect(frame,classes,confidence,prediction_rect,0.6f,0.001f);
 
 
@@ -322,6 +284,9 @@ void Process::face_identification() {
     while(frame_counter!=1){// deve controllare e cedere la cpu eventualmente ad ogni periodo
         sched_yield();
     }
+    unique_lock<mutex> lock1(frame_mut,defer_lock);
+    unique_lock<mutex> lock2(bb_mut,defer_lock);
+    std::lock(lock1, lock2);
     // controlliamo se vanno effettuate delle face identification
     for(size_t i = 0; i<bboxes.size();i++)
     {

@@ -8,6 +8,7 @@
 #include <chrono>
 #include <string>
 #include <utility>
+#include <mutex>
 #include "thread_utility.h"
 
 typedef std::chrono::high_resolution_clock Clock;
@@ -48,7 +49,6 @@ class Process
     public:
         Process(const std::string& path_dir_detection_model,const std::string& path_dir_reid_model);
         virtual ~Process();
-        void run();
         static float get_overlap_perc(cv::Rect first, cv::Rect second);
         void get_corresponding_bbox(const cv::Rect& to_assoc, int &index, float &perc,int thr);
         std::vector<float> predict_face(cv::Mat frame, cv::Rect to_crop);
@@ -68,6 +68,8 @@ class Process
         cv::Mat frame;
         std::vector<Person> db;
         std::vector<bbox> bboxes;
+        std::mutex frame_mut;
+        std::mutex bb_mut;
         std::string path_dir_detection_model;
         std::string path_dir_reid_model;
         cv::dnn::DetectionModel detect_model;

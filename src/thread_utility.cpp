@@ -41,7 +41,7 @@
 	}
 
 	// eseguo la funzione
-	(*(dati->fun))(nullptr);
+	(*(dati->fun))();
 
 
 	return nullptr;

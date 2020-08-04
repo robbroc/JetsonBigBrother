@@ -34,7 +34,7 @@
  #endif
 
 struct data_2_pass {
-    void (* fun)(void*);
+    void ( *fun)();
     __u64 runtime;
 	__u64 deadline;
 	__u64 period;
