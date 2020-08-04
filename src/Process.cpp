@@ -159,154 +159,20 @@ void Process::run()
     while(true)
     {
         auto ts_all = Clock::now();
-        auto ts = chrono::duration_cast<chrono::milliseconds >(chrono::system_clock::now().time_since_epoch());
-        auto ts1 = Clock::now();
 
-        camera>> frame;
-        auto ts2 = Clock::now();
-        std::cout << "Cattura del frame dalla videocamera: "
-                  << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                  << " nanoseconds" << std::endl;
-        // per debug, controllo che il video sia finito ed esco DA TOGLIERE
-        if (frame.empty()) {
-            //cerr << "ERROR! blank frame grabbed\n";
-            break;
-        }
+
         //cout<<frame.size();
         if(!frame_counter)
         {// il primo di 3 frame deve far partire l'esecuzione della rete di detection
-            ts1 = Clock::now();
-            detect_model.detect(frame,classes,confidence,prediction_rect,0.6f,0.001f);
-            ts2 = Clock::now();
-            std::cout << "Calcolo della rete di detection: "
-                      << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                      << " nanoseconds" << std::endl;
-            //cout<<"faccio face detection e trovo "<<prediction_rect.size()<<" facce"<<endl;
-            frame_counter++;
-            for(auto && rect:prediction_rect) // associamo le predizioni dei rettangoli ad un bbox esistente dove possibile, sennò creiamo un nuovo bbox
-            {
-                int index = -1;
-                float perc = 0.0f;
-                ts1 = Clock::now();
-                get_corresponding_bbox(rect,index,perc,20);
-                ts2 = Clock::now();
-                std::cout << "get bbox time: "
-                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                          << " nanoseconds" << std::endl;
-                if(index == -1)
-                { // non è stata trovata nessuna corrispondenza
-                    // aggiungiamo il rect ad un bbox e quindi al vettore di bboxes
-                    bboxes.emplace_back(rect,frame);
-                }
-                else // aggiungiamo il rect alla mappa tra indici dei bbox e rect e perc
-                {
-                    if(rect_to_assign.find(index) == rect_to_assign.end())
-                    {
-                        rect_to_assign[index] = vector<pair<float,Rect> >();
-                        rect_to_assign[index].push_back(make_pair(perc,rect));
-                    }
-                    else
-                        rect_to_assign[index].push_back(make_pair(perc,rect));
-                }
-            }
-            // ora bisogna decidere come assegnare
 
-            for(auto && p:rect_to_assign)
-            {//assegniamo al bbox il rect che interseca maggiormente
-                ts1 = Clock::now();
-                float max_perc = 0.0f;
-                Rect max_rect;
-                for(auto && pair2:p.second)  //itero sul vettore di pair
-                {   // cerco la percentuale maggiore
-                    if (pair2.first > max_perc)
-                    {
-                        max_perc = pair2.first;
-                        max_rect = pair2.second;
 
-                    }
-
-                }
-                ts2 = Clock::now();
-                std::cout << "tempo di assegnamento del rect: "
-                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                          << " nanoseconds" << std::endl;
-                bboxes[p.first].update_time();
-
-                if((ts - bboxes[p.first].last_tracker_reinit) > 1000ms) {
-                //if(max_perc > 0.1f) {
-                    // aggiorno il boundingbox e il suo timestamp
-                    //cout<<"aggiorno tutto il bbox "<<p.first<<endl;
-                    ts1 = Clock::now();
-                    bboxes[p.first].rect=max_rect;
-                    bboxes[p.first].update_tracker(frame);
-                    ts2 = Clock::now();
-                    std::cout << "update del tracker: "
-                              << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                              << " nanoseconds" << std::endl;
-                }
-                //}
-            }
-            // ripuliamo rect_to_assign
-            rect_to_assign.clear();
-            // controlliamo se vanno effettuate delle face identification
-            for(size_t i = 0; i<bboxes.size();i++)
-            {
-                if(bboxes[i].person_index != -1) continue; // se non è nullpointer salta
-                // se è nullpointer va calcolata la rete
-                // eventualmente questa parte la si parallelizza
-                // calcolo le feature della faccia
-                ts1 = Clock::now();
-                auto face_feat = predict_face(frame,bboxes[i].rect);
-                ts2 = Clock::now();
-                std::cout << "estrazione feature faccia: "
-                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                          << " nanoseconds" << std::endl;
-                ts1 = Clock::now();
-                // la cerco nel db
-                bboxes[i].person_index = get_person(face_feat, 0.6f);
-                ts2 = Clock::now();
-                std::cout << "ricerca della persona nel db: "
-                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                          << " nanoseconds" << std::endl;
-                //cout<<"ho trovato l'id numero "<< bboxes[i].person->Getid()<<endl;
-            }
         }else if(frame_counter == 2) frame_counter = 0; // il terzo frame riazzera il conteggio
 
         else // qui effettuiamo il traking dei bboxes
         { // eventualmente parallelizzare qui
         // utilizziamo il tempo corrente per creare un meccanismo di aging
             bool tracked = false;
-            for(size_t i = 0; i<bboxes.size();i++)
-            {
-                if((ts - bboxes[i].timestamp) > 1000ms) // controllo quando è stato associato l'ultima volta un rect rilevato dalla rete di detection a questo bbox
-                {   // se è passato più di un secondo lo scarto e continuo
-                    bboxes.erase(bboxes.begin()+i);
-                    i--;
-                    continue;
-                }
-                // se non è così vecchio effetuiamo il tracking
-                Rect2d new_rect;
-                ts1 = Clock::now();
-                tracked = bboxes[i].track->update(frame,new_rect);
-                ts2 = Clock::now();
-                std::cout << "tracking mosse: "
-                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                          << " nanoseconds" << std::endl;
-                // controlliamo se il tracking è andato a buon fine eventualmente distruggiamo il bbox
-                if(!tracked)
-                {
-                    //cout<<"cancello bbox "<<i<<endl;
-                    bboxes.erase(bboxes.begin()+i);
-                    i--;
-                    continue;
-                }
-                //cout<<"Sto trackando bbox "<<i<<" , prima " <<bboxes[i].rect<<" dopo ";
-                bboxes[i].rect = new_rect;
-                //cout<<bboxes[i].rect<<endl;
 
-
-
-            }
             frame_counter++;
 
         }
@@ -314,12 +180,9 @@ void Process::run()
         // a scopo dimostrativo viene lanciata show per poi far vedere il risultato finale
         // nella demo finale dovrà girare su un altro thread con il giusto timing in modo che
         // non vengano allungati i tempi di esecuzione del core
-        ts1 = Clock::now();
+
         show_result();
-        ts2 = Clock::now();
-        std::cout << "show single frame: "
-                  << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
-                  << " nanoseconds" << std::endl;
+
         //cout<<"attualmente ci sono "<<bboxes.size()<<" bbox"<<endl;
         // writer<<frame; per salvare il video per il debug DA TOGLIERE
         // in accoppiata con show_result fa bloccare l'esecuzione
@@ -346,4 +209,132 @@ void Process::show_result()
     //cv::resizeWindow("Frame", 640, 480);
     //cv::waitKey(1); DA RIPRISTINARE
 
+}
+
+bool Process::capture_frame() {
+
+    ts = chrono::duration_cast<chrono::milliseconds >(chrono::system_clock::now().time_since_epoch());
+    camera>> frame;
+    if((++frame_counter) ==4) frame_counter=1;
+    // per debug, controllo che il video sia finito ed esco DA TOGLIERE
+    if (frame.empty()) {
+        //cerr << "ERROR! blank frame grabbed\n";
+        return false;
+    }
+    return true;
+
+}
+
+void Process::tracking_bboxes() {
+    while(frame_counter==1){// deve controllare e cedere la cpu eventualmente ad ogni periodo
+        sched_yield();
+    }
+    for(size_t i = 0; i<bboxes.size();i++)
+    {
+        if((ts - bboxes[i].timestamp) > 1000ms) // controllo quando è stato associato l'ultima volta un rect rilevato dalla rete di detection a questo bbox
+        {   // se è passato più di un secondo lo scarto e continuo
+            bboxes.erase(bboxes.begin()+i);
+            i--;
+            continue;
+        }
+        // se non è così vecchio effetuiamo il tracking
+        Rect2d new_rect;
+
+        bool tracked = bboxes[i].track->update(frame,new_rect);
+
+        // controlliamo se il tracking è andato a buon fine eventualmente distruggiamo il bbox
+        if(!tracked)
+        {
+            //cout<<"cancello bbox "<<i<<endl;
+            bboxes.erase(bboxes.begin()+i);
+            i--;
+            continue;
+        }
+        bboxes[i].rect = new_rect;
+    }
+}
+
+void Process::face_detection() {
+    // controllo se è arrivato il turno di eseguire, sennò salto l'esecuzione
+    while(frame_counter!=1){// deve controllare e cedere la cpu eventualmente ad ogni periodo
+        sched_yield();
+    }
+    detect_model.detect(frame,classes,confidence,prediction_rect,0.6f,0.001f);
+
+
+
+    for(auto && rect:prediction_rect) // associamo le predizioni dei rettangoli ad un bbox esistente dove possibile, sennò creiamo un nuovo bbox
+    {
+        int index = -1;
+        float perc = 0.0f;
+        get_corresponding_bbox(rect,index,perc,20);
+
+        if(index == -1)
+        { // non è stata trovata nessuna corrispondenza
+            // aggiungiamo il rect ad un bbox e quindi al vettore di bboxes
+            bboxes.emplace_back(rect,frame);
+        }
+        else // aggiungiamo il rect alla mappa tra indici dei bbox e rect e perc
+        {
+            if(rect_to_assign.find(index) == rect_to_assign.end())
+            {
+                rect_to_assign[index] = vector<pair<float,Rect> >();
+                rect_to_assign[index].push_back(make_pair(perc,rect));
+            }
+            else
+                rect_to_assign[index].push_back(make_pair(perc,rect));
+        }
+    }
+    // ora bisogna decidere come assegnare
+
+    for(auto && p:rect_to_assign)
+    {//assegniamo al bbox il rect che interseca maggiormente
+        float max_perc = 0.0f;
+        Rect max_rect;
+        for(auto && pair2:p.second)  //itero sul vettore di pair
+        {   // cerco la percentuale maggiore
+            if (pair2.first > max_perc)
+            {
+                max_perc = pair2.first;
+                max_rect = pair2.second;
+
+            }
+
+        }
+
+        bboxes[p.first].update_time();
+
+        if((ts - bboxes[p.first].last_tracker_reinit) > 1000ms) {
+            //if(max_perc > 0.1f) {
+            // aggiorno il boundingbox e il suo timestamp
+            //cout<<"aggiorno tutto il bbox "<<p.first<<endl;
+            bboxes[p.first].rect=max_rect;
+            bboxes[p.first].update_tracker(frame);
+            }
+        //}
+    }
+    // ripuliamo rect_to_assign
+    rect_to_assign.clear();
+
+}
+
+void Process::face_identification() {
+    while(frame_counter!=1){// deve controllare e cedere la cpu eventualmente ad ogni periodo
+        sched_yield();
+    }
+    // controlliamo se vanno effettuate delle face identification
+    for(size_t i = 0; i<bboxes.size();i++)
+    {
+        if(bboxes[i].person_index != -1) continue; // se non è nullpointer salta
+        // se è nullpointer va calcolata la rete
+        // eventualmente questa parte la si parallelizza
+        // calcolo le feature della faccia
+        auto face_feat = predict_face(frame,bboxes[i].rect);
+
+
+        // la cerco nel db
+        bboxes[i].person_index = get_person(face_feat, 0.6f);
+
+
+    }
 }

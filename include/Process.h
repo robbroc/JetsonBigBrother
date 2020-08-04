@@ -55,6 +55,12 @@ class Process
         int get_person(const std::vector<float>& face_feat, float thr);
         static float cosine_similarity(std::vector<float> , std::vector<float>);
         void show_result();
+        bool capture_frame();
+        void tracking_bboxes();
+        void face_detection();
+        void face_identification();
+
+
     protected:
 
     private:
@@ -71,6 +77,7 @@ class Process
         std::vector<int> classes;
         std::vector<cv::Rect> prediction_rect;
         std::map<int,std::vector<std::pair<float,cv::Rect> > > rect_to_assign;
+        std::chrono::milliseconds ts;
 
 
 };
