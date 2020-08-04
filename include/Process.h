@@ -10,6 +10,7 @@
 #include <utility>
 #include "thread_utility.h"
 
+typedef std::chrono::high_resolution_clock Clock;
 struct bbox {
     int person_index = -1;
     cv::Rect rect;
@@ -28,8 +29,7 @@ struct bbox {
 
     void update_time()
     {
-        timestamp= std::chrono::duration_cast< std::chrono::milliseconds >
-        (std::chrono::system_clock::now().time_since_epoch());
+        timestamp= std::chrono::duration_cast< std::chrono::milliseconds >(std::chrono::system_clock::now().time_since_epoch());
     }
 
     void update_tracker(cv::Mat frame)
@@ -46,14 +46,14 @@ struct bbox {
 class Process
 {
     public:
-        Process(std::string path_dir_detection_model,std::string path_dir_reid_model);
+        Process(const std::string& path_dir_detection_model,const std::string& path_dir_reid_model);
         virtual ~Process();
         void run();
-        float get_overlap_perc(cv::Rect first, cv::Rect second);
-        void get_corresponding_bbox(cv::Rect to_assoc, int &index, float &perc,int thr);
+        static float get_overlap_perc(cv::Rect first, cv::Rect second);
+        void get_corresponding_bbox(const cv::Rect& to_assoc, int &index, float &perc,int thr);
         std::vector<float> predict_face(cv::Mat frame, cv::Rect to_crop);
-        int get_person(std::vector<float> face_feat, float thr);
-        float cosine_similarity(std::vector<float> , std::vector<float>);
+        int get_person(const std::vector<float>& face_feat, float thr);
+        static float cosine_similarity(std::vector<float> , std::vector<float>);
         void show_result();
     protected:
 

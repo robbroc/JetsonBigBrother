@@ -4,11 +4,12 @@ using namespace cv;
 using namespace cv::dnn;
 using namespace std::chrono_literals;
 #include <unistd.h> //da togliere
-Process::Process(string path_dir_detection_model,string path_dir_reid_model):
+Process::Process(const string& path_dir_detection_model,const string& path_dir_reid_model):
  camera(0, cv::CAP_V4L2), // per la webcam
 //camera("./out.mp4"), //per il debug DA TOGLIERE
 detect_model(path_dir_detection_model+"optimized.pb",path_dir_detection_model+"cvgraph.pbtxt")
 {
+    camera.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G')); // facciamo una compressione per ridurre le tempistiche, ciò viene effettuato dalla camera
     detect_model.setInputParams(1.0,Size(320,320),0,true);
     detect_model.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
     detect_model.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
@@ -62,7 +63,7 @@ float Process::get_overlap_perc(cv::Rect first, cv::Rect second)
 }
 //dato il rettangolo da associare al bbox restituisce l'indice del bbox con cui overlappa maggiormente
 // se non lo trova restituisce -1
-void Process::get_corresponding_bbox(cv::Rect to_assoc, int &index, float &perc, int thr)
+void Process::get_corresponding_bbox(const cv::Rect& to_assoc, int &index, float &perc, int thr)
 {
     perc = 0.0f;
     index = -1;
@@ -97,8 +98,8 @@ float Process::cosine_similarity(std::vector<float> A, std::vector<float>B)
     {
         throw std::logic_error("Vector A and Vector B are empty");
     }
-    std::vector<float>::iterator B_iter = B.begin();
-    std::vector<float>::iterator A_iter = A.begin();
+    auto B_iter = B.begin();
+    auto A_iter = A.begin();
     for( ; A_iter != A.end(); A_iter++ , B_iter++ )
     {
         mul += *A_iter * *B_iter;
@@ -114,7 +115,7 @@ float Process::cosine_similarity(std::vector<float> A, std::vector<float>B)
     return 1.0f-(mul / (sqrt(d_a) * sqrt(d_b)));
 }
 // restituisce il db[i]puntatore ad una persona,eventualmente aggiunge la persona nel db
-int Process::get_person(std::vector<float> face_feat, float thr)
+int Process::get_person(const std::vector<float>& face_feat, float thr)
 {
     int min_index = -1;
     float min_coss = thr;
@@ -154,10 +155,18 @@ void Process::run()
     camera>>frame;
     writer.open(filename, codec, fps, frame.size(), true);
     */
+
     while(true)
     {
+        auto ts_all = Clock::now();
         auto ts = chrono::duration_cast<chrono::milliseconds >(chrono::system_clock::now().time_since_epoch());
+        auto ts1 = Clock::now();
+
         camera>> frame;
+        auto ts2 = Clock::now();
+        std::cout << "Cattura del frame dalla videocamera: "
+                  << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                  << " nanoseconds" << std::endl;
         // per debug, controllo che il video sia finito ed esco DA TOGLIERE
         if (frame.empty()) {
             //cerr << "ERROR! blank frame grabbed\n";
@@ -166,14 +175,24 @@ void Process::run()
         //cout<<frame.size();
         if(!frame_counter)
         {// il primo di 3 frame deve far partire l'esecuzione della rete di detection
+            ts1 = Clock::now();
             detect_model.detect(frame,classes,confidence,prediction_rect,0.6f,0.001f);
+            ts2 = Clock::now();
+            std::cout << "Calcolo della rete di detection: "
+                      << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                      << " nanoseconds" << std::endl;
             //cout<<"faccio face detection e trovo "<<prediction_rect.size()<<" facce"<<endl;
             frame_counter++;
             for(auto && rect:prediction_rect) // associamo le predizioni dei rettangoli ad un bbox esistente dove possibile, sennò creiamo un nuovo bbox
             {
                 int index = -1;
                 float perc = 0.0f;
+                ts1 = Clock::now();
                 get_corresponding_bbox(rect,index,perc,20);
+                ts2 = Clock::now();
+                std::cout << "get bbox time: "
+                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                          << " nanoseconds" << std::endl;
                 if(index == -1)
                 { // non è stata trovata nessuna corrispondenza
                     // aggiungiamo il rect ad un bbox e quindi al vettore di bboxes
@@ -191,8 +210,10 @@ void Process::run()
                 }
             }
             // ora bisogna decidere come assegnare
+
             for(auto && p:rect_to_assign)
             {//assegniamo al bbox il rect che interseca maggiormente
+                ts1 = Clock::now();
                 float max_perc = 0.0f;
                 Rect max_rect;
                 for(auto && pair2:p.second)  //itero sul vettore di pair
@@ -205,13 +226,23 @@ void Process::run()
                     }
 
                 }
+                ts2 = Clock::now();
+                std::cout << "tempo di assegnamento del rect: "
+                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                          << " nanoseconds" << std::endl;
                 bboxes[p.first].update_time();
+
                 if((ts - bboxes[p.first].last_tracker_reinit) > 1000ms) {
                 //if(max_perc > 0.1f) {
                     // aggiorno il boundingbox e il suo timestamp
                     //cout<<"aggiorno tutto il bbox "<<p.first<<endl;
+                    ts1 = Clock::now();
                     bboxes[p.first].rect=max_rect;
                     bboxes[p.first].update_tracker(frame);
+                    ts2 = Clock::now();
+                    std::cout << "update del tracker: "
+                              << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                              << " nanoseconds" << std::endl;
                 }
                 //}
             }
@@ -224,9 +255,19 @@ void Process::run()
                 // se è nullpointer va calcolata la rete
                 // eventualmente questa parte la si parallelizza
                 // calcolo le feature della faccia
+                ts1 = Clock::now();
                 auto face_feat = predict_face(frame,bboxes[i].rect);
+                ts2 = Clock::now();
+                std::cout << "estrazione feature faccia: "
+                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                          << " nanoseconds" << std::endl;
+                ts1 = Clock::now();
                 // la cerco nel db
                 bboxes[i].person_index = get_person(face_feat, 0.6f);
+                ts2 = Clock::now();
+                std::cout << "ricerca della persona nel db: "
+                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                          << " nanoseconds" << std::endl;
                 //cout<<"ho trovato l'id numero "<< bboxes[i].person->Getid()<<endl;
             }
         }else if(frame_counter == 2) frame_counter = 0; // il terzo frame riazzera il conteggio
@@ -245,7 +286,12 @@ void Process::run()
                 }
                 // se non è così vecchio effetuiamo il tracking
                 Rect2d new_rect;
+                ts1 = Clock::now();
                 tracked = bboxes[i].track->update(frame,new_rect);
+                ts2 = Clock::now();
+                std::cout << "tracking mosse: "
+                          << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                          << " nanoseconds" << std::endl;
                 // controlliamo se il tracking è andato a buon fine eventualmente distruggiamo il bbox
                 if(!tracked)
                 {
@@ -268,12 +314,21 @@ void Process::run()
         // a scopo dimostrativo viene lanciata show per poi far vedere il risultato finale
         // nella demo finale dovrà girare su un altro thread con il giusto timing in modo che
         // non vengano allungati i tempi di esecuzione del core
+        ts1 = Clock::now();
         show_result();
+        ts2 = Clock::now();
+        std::cout << "show single frame: "
+                  << std::chrono::duration_cast<std::chrono::nanoseconds>(ts2 - ts1).count()
+                  << " nanoseconds" << std::endl;
         //cout<<"attualmente ci sono "<<bboxes.size()<<" bbox"<<endl;
         // writer<<frame; per salvare il video per il debug DA TOGLIERE
         // in accoppiata con show_result fa bloccare l'esecuzione
         if (waitKey(1) >= 0) // DA TOGLIERE
             break;
+        auto ts_all_f = Clock::now();
+        std::cout << "all execution: "
+                  << std::chrono::duration_cast<std::chrono::nanoseconds>(ts_all_f - ts_all).count()
+                  << " nanoseconds" << std::endl;
         sched_yield(); //una volta terminato il lavoro per il periodo rilascia le risorse
     }
 }
