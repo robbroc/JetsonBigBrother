@@ -1,9 +1,9 @@
 #include "Process.h"
-/*
+
 #include <opencv2/cudaimgproc.hpp>
 #include <opencv2/cudawarping.hpp>
 #include <opencv2/cudaarithm.hpp>
-// */
+
 Process proc("./face_detection/","./face_identification/");
 void cap_frame()
 {
@@ -57,8 +57,8 @@ int main()
     sched_param fifo_params;
     fifo_params.sched_priority = 99;
     sched_setscheduler(pthread_self(), SCHED_FIFO,&fifo_params);
-    /*int CudaDevice = cv::cuda::getDevice();
-    cv::cuda::setDevice(CudaDevice); */
+    int CudaDevice = cv::cuda::getDevice();
+    cv::cuda::setDevice(CudaDevice);
     data_2_pass param_cap_f, param_face_det, param_face_id, param_track_bb, param_show_im;
     // parametri del capture frame 25 fps
     param_cap_f.fun = &cap_frame;
