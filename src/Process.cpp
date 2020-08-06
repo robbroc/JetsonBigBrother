@@ -68,8 +68,14 @@ void Process::get_corresponding_bbox(const cv::Rect& to_assoc, int &index, float
     perc = 0.0f;
     index = -1;
     for(size_t i = 0; i<bboxes.size();i++)
-    {
-        if(bboxes[i].person_index == -1) continue; // per evitare di associare rect a bbox appenaaggiunti
+    { // bisogna distinguere in qualche modo i rect appena aggiunti da quelli che vanno poi identificati in un secondo tempo tramite feature extraction
+        if(bboxes[i].person_index < -1) { // serve per fare in modo che la prossima volta che viene fatto il face identification,
+            // quelli che hanno -1 su persona sono in realtà quelli inseriti nella precedente face identification
+            // e non vengono esclusi dal calcolo della percentuale di overlap
+            bboxes[i].person_index ++;
+            continue; // per evitare di associare rect a bbox appenaaggiunti
+        }
+
         auto actual_perc = get_overlap_perc(to_assoc,bboxes[i].rect);
         //cout<<actual_perc<<endl;
         if(static_cast<int>(actual_perc) > thr)
@@ -188,7 +194,7 @@ void Process::tracking_bboxes() {
     unique_lock<mutex> lock1(frame_mut,defer_lock);
     unique_lock<mutex> lock2(bb_mut,defer_lock);
     std::lock(lock1, lock2);
-    for(size_t i = 0; i<bboxes.size();i++)
+    for(auto i = 0; i<bboxes.size();i++)
     {
         if((ts - bboxes[i].timestamp) > 1000ms) // controllo quando è stato associato l'ultima volta un rect rilevato dalla rete di detection a questo bbox
         {   // se è passato più di un secondo lo scarto e continuo
@@ -225,26 +231,26 @@ void Process::face_detection() {
 
 
 
-    for(auto && rect:prediction_rect) // associamo le predizioni dei rettangoli ad un bbox esistente dove possibile, sennò creiamo un nuovo bbox
+    for(auto i = 0; i<prediction_rect.size();i++) // associamo le predizioni dei rettangoli ad un bbox esistente dove possibile, sennò creiamo un nuovo bbox
     {
         int index = -1;
         float perc = 0.0f;
-        get_corresponding_bbox(rect,index,perc,20);
+        get_corresponding_bbox(prediction_rect[i],index,perc,20);
 
         if(index == -1)
         { // non è stata trovata nessuna corrispondenza
             // aggiungiamo il rect ad un bbox e quindi al vettore di bboxes
-            bboxes.emplace_back(rect,frame);
+            bboxes.emplace_back(prediction_rect[i],frame,prediction_rect.size() - i);
         }
         else // aggiungiamo il rect alla mappa tra indici dei bbox e rect e perc
         {
             if(rect_to_assign.find(index) == rect_to_assign.end())
-            {
+            { // necessario per creare il vettore la prima volta prima di fare il push_back
                 rect_to_assign[index] = vector<pair<float,Rect> >();
-                rect_to_assign[index].push_back(make_pair(perc,rect));
+                rect_to_assign[index].push_back(make_pair(perc,prediction_rect[i]));
             }
             else
-                rect_to_assign[index].push_back(make_pair(perc,rect));
+                rect_to_assign[index].push_back(make_pair(perc,prediction_rect[i]));
         }
     }
     // ora bisogna decidere come assegnare

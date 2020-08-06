@@ -19,10 +19,11 @@ struct bbox {
     std::chrono::milliseconds timestamp; // aggiornato solo quando gli viene calcolata la rete di detection ci serve per scartare i bbox troppo vecchi
     std::chrono::milliseconds last_tracker_reinit;
 
-    bbox(cv::Rect new_rect,cv::Mat frame): rect(new_rect),
+    bbox(cv::Rect new_rect,cv::Mat frame, int temp_pers_index): rect(new_rect),
     timestamp(std::chrono::duration_cast< std::chrono::milliseconds >
         (std::chrono::system_clock::now().time_since_epoch()))
     {
+        person_index = temp_pers_index;
         track = cv::TrackerMOSSE::create();
         track->init(frame,rect);
         last_tracker_reinit = timestamp;
