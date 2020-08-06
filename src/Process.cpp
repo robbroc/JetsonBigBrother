@@ -12,7 +12,7 @@ detect_model(path_dir_detection_model+"optimized.pb",path_dir_detection_model+"c
     camera.set(cv::CAP_PROP_FOURCC, cv::VideoWriter::fourcc('M','J','P','G')); // facciamo una compressione per ridurre le tempistiche, ciò viene effettuato dalla camera
     detect_model.setInputParams(1.0,Size(320,320),0,true);
     detect_model.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
-    detect_model.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA);
+    detect_model.setPreferableTarget(cv::dnn::DNN_TARGET_CUDA_FP16);
     reid_model=readNetFromCaffe(path_dir_reid_model+"model-caffe.prototxt", path_dir_reid_model+"model-caffe.caffemodel");
 
     reid_model.setPreferableBackend(cv::dnn::DNN_BACKEND_CUDA);
